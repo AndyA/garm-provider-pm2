@@ -1,0 +1,46 @@
+{
+  "name": "garm-provider-pm2",
+  "version": "0.0.1",
+  "description": "A Garn provider for pm2 runners",
+  "main": "garm-external-provider",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AndyA/garm-provider-pm2.git"
+  },
+  "keywords": [
+    "garm",
+    "pm2",
+    "github",
+    "actions",
+    "actions",
+    "ci"
+  ],
+  "author": "Andy Armstrong <andy@hexten.net>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/AndyA/garm-provider-pm2/issues"
+  },
+  "homepage": "https://github.com/AndyA/garm-provider-pm2#readme",
+  "prettier": {
+    "tabWidth": 2,
+    "useTabs": false,
+    "semi": true,
+    "singleQuote": false,
+    "quoteProps": "consistent",
+    "jsxSingleQuote": false,
+    "trailingComma": "es5",
+    "bracketSpacing": true,
+    "arrowParens": "avoid",
+    "requirePragma": false,
+    "insertPragma": false,
+    "proseWrap": "preserve",
+    "htmlWhitespaceSensitivity": "css",
+    "endOfLine": "lf"
+  },
+  "dependencies": {
+    "bluebird": "^3.7.2",
+    "lodash": "^4.17.21",
+    "pm2": "^5.3.0"
+  }
+}

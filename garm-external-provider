@@ -1,0 +1,109 @@
+#!/usr/bin/env node
+
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const _ = require("lodash");
+const Promise = require("bluebird");
+const pm2 = Promise.promisifyAll(require("pm2"));
+
+const WORK = path.resolve("./work");
+
+async function test() {
+  const conn = await pm2.connectAsync();
+
+  const env = _.pickBy(process.env, (v, k) => /^GARM_/.test(k));
+
+  await pm2.startAsync({
+    name: "test",
+    script: "./bin/bootstrap.sh",
+    interpreter: "/usr/bin/bash",
+    autorestart: false,
+    env,
+  });
+
+  const running = await pm2.listAsync();
+  console.log(JSON.stringify(running, null, 2));
+  await pm2.stopAsync("test");
+}
+
+async function workDir(...name) {
+  const dir = path.join(WORK, ...name);
+  await fs.promises.mkdir(dir, { recursive: true });
+  return dir;
+}
+
+const osMap = {
+  darwin: "osx",
+  win32: "win",
+};
+
+function getProfile() {
+  const architecture = os.arch();
+  const platform = os.platform();
+  return { architecture, os: osMap[platform] ?? platform };
+}
+
+const readInput = () => JSON.parse(fs.readFileSync(process.stdin.fd, "utf-8"));
+
+async function downloadTool(tool) {
+  const stash = await workDir("stash");
+}
+
+async function createInstance() {
+  const bootstrap = readInput();
+  const profile = getProfile();
+  const avail = bootstrap.tools.filter(
+    ({ os, architecture }) =>
+      os === profile.os && architecture === profile.architecture
+  );
+  console.log(avail);
+}
+
+async function init() {
+  await pm2.connectAsync();
+}
+
+async function main() {
+  await init();
+
+  switch (process.env.GARM_COMMAND) {
+    // CreateInstance creates a new compute instance in the provider.
+    case "CreateInstance":
+      return createInstance();
+
+    // Delete instance will delete the instance in a provider.
+    case "DeleteInstance":
+      break;
+    // GetInstance will return details about one instance.
+    case "GetInstance":
+      break;
+    // ListInstances will list all instances for a provider.
+    case "ListInstances":
+      break;
+    // RemoveAllInstances will remove all instances created by this provider.
+    case "RemoveAllInstances":
+      break;
+    // Stop shuts down the instance.
+    case "Stop":
+      break;
+    // Start boots up an instance.
+    case "Start":
+      break;
+
+    // Unknown
+    default:
+      throw new Exception(`Unknown GARM_COMMAND: ${process.env.GARM_COMMAND}`);
+  }
+}
+
+main()
+  .catch(e => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(() => {
+    pm2.disconnect();
+  });
+
+// vim: set ft=js
