@@ -27,7 +27,7 @@ const mutStore = name => async mutator => {
   if (next !== data) await saveJSON(name, next);
 };
 
-const mutLog = mutStore(path.join(TMP, "log.json"));
+const record = mutStore(path.join(TMP, "log.json"));
 
 // const logFile = path.join(TMP, "log.json");
 // const log = await loadJSON(logFile).catch(e => ({}));
@@ -151,7 +151,7 @@ async function createInstance() {
   await runCommand("./bin/download.sh", [], env);
 
   const tok = await getRunnerToken(env);
-  await mutLog(log => {
+  await record(log => {
     if (!log.tokens) log.tokens = [];
     log.tokens.push(tok);
   });
@@ -168,9 +168,9 @@ async function main() {
   await init();
   console.log(`done init`);
 
-  await mutLog(log => {
-    if (!log.commands) log.commands = [];
-    log.commands.push(process.env.GARM_COMMAND);
+  await record(log => {
+    if (!log.invoke) log.invoke = [];
+    log.invoke.push(process.env);
   });
   console.log(`updated log, dispatching ${process.env.GARM_COMMAND}`);
 
