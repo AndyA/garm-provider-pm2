@@ -3,11 +3,15 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const { spawn } = require("child_process");
 const _ = require("lodash");
 const Promise = require("bluebird");
 const pm2 = Promise.promisifyAll(require("pm2"));
+const axios = require("axios");
 
-const WORK = path.resolve("./work");
+// const WORK = path.resolve("./work");
+const WORK = "/home/andy/Works/Github/garm-provider-pm2/work";
+const TMP = "/home/andy/Works/Github/garm-provider-pm2/tmp";
 
 async function test() {
   const conn = await pm2.connectAsync();
@@ -33,10 +37,36 @@ async function workDir(...name) {
   return dir;
 }
 
+const runCommand = async (cmd, args, env) =>
+  new Promise((resolve, reject) => {
+    const p = spawn(cmd, args, { stdio: "inherit", env })
+      .on("close", resolve)
+      .on("error", reject);
+  });
+
 const osMap = {
   darwin: "osx",
   win32: "win",
 };
+
+const idChars = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+const makeIdent = length =>
+  Array.from({ length })
+    .map(() => idChars.charAt(Math.random() * idChars.length))
+    .join("");
+
+const makeEnv = prefix => obj =>
+  _(obj)
+    .toPairs()
+    .map(([k, v]) => [
+      prefix + _.snakeCase(k).toUpperCase(),
+      Array.isArray(v) ? v.join(",") : v,
+    ])
+    .fromPairs()
+    .value();
+
+const gpm2Env = makeEnv("GPM2_");
 
 function getProfile() {
   const architecture = os.arch();
@@ -45,19 +75,69 @@ function getProfile() {
 }
 
 const readInput = () => JSON.parse(fs.readFileSync(process.stdin.fd, "utf-8"));
+const sendOutput = doc =>
+  process.stdout.write(JSON.stringify(doc, null, 2) + "\n");
 
-async function downloadTool(tool) {
-  const stash = await workDir("stash");
-}
-
-async function createInstance() {
-  const bootstrap = readInput();
+function getMatchingTool(tools) {
   const profile = getProfile();
-  const avail = bootstrap.tools.filter(
+  const avail = tools.filter(
     ({ os, architecture }) =>
       os === profile.os && architecture === profile.architecture
   );
-  console.log(avail);
+
+  if (avail.length !== 1) {
+    const sig = `${profile.os}/${profile.architecture}`;
+    if (avail.length === 0) throw new Error(`No workers available for ${sig}`);
+    console.warn(`${avail.length} workers available for ${sig}`);
+  }
+
+  return avail[0];
+}
+
+async function getRunnerToken(env) {
+  const res = await axios.get(env.GPM2_METADATA_URL, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${env.GPM2_INSTANCE_TOKEN}`,
+    },
+  });
+  console.log(res.data);
+  return res.data;
+}
+
+const saveJSON = async (name, data) => {
+  await fs.promises.mkdir(path.dirname(name), { recursive: true });
+  const tmp = `${name}.tmp`;
+  await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2));
+  await fs.promises.rename(tmp, name);
+};
+
+const loadJSON = name => fs.promises.readFile(name, "utf-8").then(JSON.parse);
+
+async function createInstance() {
+  const { tools, ...bootstrap } = readInput();
+
+  await saveJSON("tmp/job.json", { tools, ...bootstrap });
+
+  const runnerId = `garm-${makeIdent(20)}`;
+  const stashDir = await workDir("stash");
+  const runnerHome = await workDir("job", runnerId);
+
+  const tool = getMatchingTool(tools);
+
+  const env = {
+    ...process.env,
+    ...gpm2Env({ runnerId, stashDir, runnerHome }),
+    ...gpm2Env(tool),
+    ...gpm2Env(bootstrap),
+    GPM2_INSTANCE_TOKEN: process.env["TOKEN"],
+  };
+
+  // Download the action runner and create runnerHome
+  await runCommand("./bin/download.sh", [], env);
+
+  const tok = await getRunnerToken(env);
+  console.log({ tok });
 }
 
 async function init() {
@@ -66,6 +146,11 @@ async function init() {
 
 async function main() {
   await init();
+
+  const logFile = path.join(TMP, "log.json");
+  const log = await loadJSON(logFile).catch(e => ({}));
+  (log.commands = log.commands || []).push(process.env.GARM_COMMAND);
+  await saveJSON(logFile, log);
 
   switch (process.env.GARM_COMMAND) {
     // CreateInstance creates a new compute instance in the provider.
@@ -93,7 +178,9 @@ async function main() {
 
     // Unknown
     default:
-      throw new Exception(`Unknown GARM_COMMAND: ${process.env.GARM_COMMAND}`);
+      throw new Error(
+        `Unknown GARM_COMMAND: ${process.env.GARM_COMMAND ?? "*missing*"}`
+      );
   }
 }
 
