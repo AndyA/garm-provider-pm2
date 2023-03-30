@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -8,10 +6,33 @@ const _ = require("lodash");
 const Promise = require("bluebird");
 const pm2 = Promise.promisifyAll(require("pm2"));
 const axios = require("axios");
+const { produce } = require("immer");
 
 // const WORK = path.resolve("./work");
 const WORK = "/home/andy/Works/Github/garm-provider-pm2/work";
 const TMP = "/home/andy/Works/Github/garm-provider-pm2/tmp";
+
+const saveJSON = async (name, data) => {
+  await fs.promises.mkdir(path.dirname(name), { recursive: true });
+  const tmp = `${name}.tmp`;
+  await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2));
+  await fs.promises.rename(tmp, name);
+};
+
+const loadJSON = name => fs.promises.readFile(name, "utf-8").then(JSON.parse);
+
+const mutStore = name => async mutator => {
+  const data = await loadJSON(name).catch(e => ({}));
+  const next = produce(data, mutator);
+  if (next !== data) await saveJSON(name, next);
+};
+
+const mutLog = mutStore(path.join(TMP, "log.json"));
+
+// const logFile = path.join(TMP, "log.json");
+// const log = await loadJSON(logFile).catch(e => ({}));
+// (log.commands = log.commands || []).push(process.env.GARM_COMMAND);
+// await saveJSON(logFile, log);
 
 async function test() {
   const conn = await pm2.connectAsync();
@@ -95,24 +116,18 @@ function getMatchingTool(tools) {
 }
 
 async function getRunnerToken(env) {
-  const res = await axios.get(env.GPM2_METADATA_URL, {
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${env.GPM2_INSTANCE_TOKEN}`,
-    },
-  });
+  const headers = {
+    Accept: `application/json`,
+    Authorization: `Bearer ${env.GPM2_INSTANCE_TOKEN}`,
+  };
+
+  const res = await axios.get(
+    `${env.GPM2_METADATA_URL}/runner-registration-token`,
+    { headers }
+  );
   console.log(res.data);
   return res.data;
 }
-
-const saveJSON = async (name, data) => {
-  await fs.promises.mkdir(path.dirname(name), { recursive: true });
-  const tmp = `${name}.tmp`;
-  await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2));
-  await fs.promises.rename(tmp, name);
-};
-
-const loadJSON = name => fs.promises.readFile(name, "utf-8").then(JSON.parse);
 
 async function createInstance() {
   const { tools, ...bootstrap } = readInput();
@@ -130,27 +145,34 @@ async function createInstance() {
     ...gpm2Env({ runnerId, stashDir, runnerHome }),
     ...gpm2Env(tool),
     ...gpm2Env(bootstrap),
-    GPM2_INSTANCE_TOKEN: process.env["TOKEN"],
   };
 
   // Download the action runner and create runnerHome
   await runCommand("./bin/download.sh", [], env);
 
   const tok = await getRunnerToken(env);
-  console.log({ tok });
+  await mutLog(log => {
+    if (!log.tokens) log.tokens = [];
+    log.tokens.push(tok);
+  });
 }
 
 async function init() {
-  await pm2.connectAsync();
+  console.log(`connecting...`);
+  // const conn = await pm2.connectAsync().catch(e => console.log(e));
+  // console.log(`connected:`, conn);
 }
 
 async function main() {
+  console.log(`in hook`);
   await init();
+  console.log(`done init`);
 
-  const logFile = path.join(TMP, "log.json");
-  const log = await loadJSON(logFile).catch(e => ({}));
-  (log.commands = log.commands || []).push(process.env.GARM_COMMAND);
-  await saveJSON(logFile, log);
+  await mutLog(log => {
+    if (!log.commands) log.commands = [];
+    log.commands.push(process.env.GARM_COMMAND);
+  });
+  console.log(`updated log, dispatching ${process.env.GARM_COMMAND}`);
 
   switch (process.env.GARM_COMMAND) {
     // CreateInstance creates a new compute instance in the provider.
@@ -192,5 +214,3 @@ main()
   .finally(() => {
     pm2.disconnect();
   });
-
-// vim: set ft=js

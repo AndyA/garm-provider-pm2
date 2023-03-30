@@ -54,7 +54,7 @@ function fail() {
 
 pushd "$GPM2_STASH_DIR" > /dev/null
 
-env | sort | grep '^GPM2_'
+# env | sort | grep '^GPM2_'
 
 # TODO check it really is a tgz.
 PROTO_DIR="${GPM2_FILENAME%.tar.gz}"
