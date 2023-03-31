@@ -17,18 +17,14 @@ function sendStatus() {
 	call "{\"status\": \"installing\", \"message\": \"$MSG\"}"
 }
 
-function success() {
-	local MSG="$1"
-	local ID="$2"
-	call "{\"status\": \"idle\", \"message\": \"$MSG\", \"agent_id\": $ID}"
-}
-
 function fail() {
   echo "$MSG" 
 	local MSG="$1"
 	call "{\"status\": \"failed\", \"message\": \"$MSG\"}"
 	exit 1
 }
+
+cd "$GPM2_RUNNER_HOME"
 
 sendStatus "Configuring runner"
 
@@ -41,11 +37,4 @@ sendStatus "Configuring runner"
   --ephemeral                     \
   || fail "Failed to configure runner"
 
-sendStatus "Starting service"
-
-AGENT_ID=$( jq '.agentId' < .runner )
-[[ $? -eq 0 ]] || fail "failed to get agent ID"
-
-success "Runner successfully started" $AGENT_ID
-
-./run.sh || fail "Failed to start service"
+sendStatus "Configured runner"

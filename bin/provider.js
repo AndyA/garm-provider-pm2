@@ -6,8 +6,33 @@ const _ = require("lodash");
 const Promise = require("bluebird");
 const pm2 = Promise.promisifyAll(require("pm2"));
 const axios = require("axios");
+const { produce } = require("immer");
 
 const WORK = path.resolve("./work");
+
+const saveJSON = async (name, data) => {
+  await fs.promises.mkdir(path.dirname(name), { recursive: true });
+  const tmp = `${name}.tmp`;
+  await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2));
+  await fs.promises.rename(tmp, name);
+};
+
+const loadJSON = name => fs.promises.readFile(name, "utf-8").then(JSON.parse);
+
+const mutStore = name => async mutator => {
+  const data = await loadJSON(name).catch(e => ({}));
+  const next = produce(data, mutator);
+  if (next !== data) await saveJSON(name, next);
+};
+
+const logName = new Date().toISOString() + "." + process.pid;
+
+const record = mutStore(path.join(WORK, "logs", `${logName}.json`));
+const mention = (msg, data) =>
+  record(log => {
+    if (!log.messages) log.messages = [];
+    log.messages.push({ msg, data });
+  });
 
 async function workDir(...name) {
   const dir = path.join(WORK, ...name);
@@ -17,10 +42,15 @@ async function workDir(...name) {
 
 const runCommand = async (cmd, args, env) =>
   new Promise((resolve, reject) => {
-    const p = spawn(cmd, args, { stdio: "inherit", env })
+    const p = spawn(cmd, args, { stdio: "ignore", env })
       .on("close", resolve)
       .on("error", reject);
   });
+
+const doCommand = async (cmd, args, env) => {
+  const rc = await runCommand(cmd, args, env);
+  if (rc !== 0) throw new Error(`${cmd} failed: ${rc}`);
+};
 
 const osMap = {
   darwin: "osx",
@@ -46,8 +76,12 @@ function getProfile() {
 }
 
 const readInput = () => JSON.parse(fs.readFileSync(process.stdin.fd, "utf-8"));
-const sendOutput = doc =>
+const sendOutput = async doc => {
+  await record(log => {
+    log.output = doc;
+  });
   process.stdout.write(JSON.stringify(doc, null, 2) + "\n");
+};
 
 const pm2Status = {
   "online": "running",
@@ -101,6 +135,9 @@ async function getRunnerToken(env) {
 
 async function createInstance() {
   const { tools, ...bootstrap } = readInput();
+  await record(log => {
+    log.input = { tools, ...bootstrap };
+  });
 
   const stashDir = await workDir("stash");
   const runnerHome = await workDir("job", bootstrap.name);
@@ -108,7 +145,7 @@ async function createInstance() {
 
   const tool = getMatchingTool(tools);
 
-  const env = {
+  const baseEnv = {
     ...process.env,
     ...gpm2Env({ stashDir, runnerHome, status }),
     ...gpm2Env(tool),
@@ -116,26 +153,40 @@ async function createInstance() {
   };
 
   // Download the action runner and create runnerHome
-  const rc = await runCommand("./bin/download.sh", [], env);
-  if (rc !== 0) throw new Error(`Downloader failed: ${rc}`);
+  await doCommand("./bin/download.sh", [], baseEnv);
 
-  const githubToken = await getRunnerToken(env);
+  await mention(`made work dir`);
+
+  const githubToken = await getRunnerToken(baseEnv);
+
+  await mention(`got token`, githubToken);
+
+  const env = {
+    ...baseEnv,
+    ...gpm2Env({ githubToken }),
+  };
+
+  await mention(`made child env`, env);
+
+  await doCommand("./bin/bootstrap.sh", [], env);
+
+  await mention(`bootstrapped`);
 
   await pm2.startAsync({
     name: bootstrap.name,
-    script: path.resolve("./bin/bootstrap.sh"),
+    script: "./run.sh",
     interpreter: "/usr/bin/bash",
     cwd: runnerHome,
     autorestart: false,
-    env: { ...env, ...gpm2Env({ githubToken }) },
+    env: { ...env },
   });
 
-  sendOutput(env2Instance(env));
+  await sendOutput(env2Instance(baseEnv));
 }
 
 async function runnerCleanup(id) {
   const dir = await workDir("job", id);
-  await fs.promises.rmdir(dir, { recursive: true, force: true });
+  await fs.promises.rm(dir, { recursive: true });
 }
 
 async function killInstance(id) {
@@ -160,7 +211,7 @@ async function getInstances() {
 
 async function listInstances() {
   const runners = await getInstances();
-  sendOutput(runners.map(env2Instance));
+  await sendOutput(runners.map(env2Instance));
 }
 
 async function removeAllInstances() {
@@ -175,7 +226,7 @@ async function getInstance() {
   );
   if (inst.length === 0)
     throw new Error(`Can't find ${process.env.GARM_INSTANCE_ID}`);
-  sendOutput(inst[0]);
+  await sendOutput(inst[0]);
 }
 
 async function startInstance() {
@@ -191,6 +242,9 @@ async function init() {
 }
 
 async function main() {
+  await record(log => {
+    log.env = process.env;
+  });
   await init();
 
   switch (process.env.GARM_COMMAND) {

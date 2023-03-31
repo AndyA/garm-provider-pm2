@@ -9,4 +9,4 @@ export HOME
 
 cd $(dirname "$0")
 
-node bin/provider.js | tee -a /tmp/provider.log
+node bin/provider.js 2>> /tmp/provider.log | tee -a /tmp/provider.log

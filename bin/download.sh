@@ -9,7 +9,7 @@ function call() {
     -H "Accept: application/json"                      \
     -H "Authorization: Bearer ${GPM2_INSTANCE_TOKEN}"  \
     "${GPM2_CALLBACK_URL}"                             \
-    || echo "failed to call home: exit code ($?)"
+    || echo "failed to call home: exit code ($?)" 1>&2
 }
 
 function sendStatus() {
