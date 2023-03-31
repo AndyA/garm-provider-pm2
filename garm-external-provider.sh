@@ -3,11 +3,13 @@
 set -e
 
 export PATH="/snap/bin:/usr/local/bin:/usr/bin:/bin"
+export HOME="/home/andy"
 
 cd $(dirname "$0")
 
-pwd >> "tmp/tracer.log"
-which node >> "tmp/tracer.log"
-env | sort >> "tmp/tracer.log"
+pwd >> "/tmp/provider.log"
+which node >> "/tmp/provider.log"
+env | sort >> "/tmp/provider.log"
+echo "-----" >> "/tmp/provider.log"
 
-node garm-external-provider.js 2>&1 >> "tmp/hook.log"
+node garm-external-provider.js | tee -a "/tmp/provider.log"
