@@ -120,17 +120,23 @@ function getMatchingTool(tools) {
   return avail[0];
 }
 
-async function getRunnerToken(env) {
-  const headers = {
-    Accept: `application/json`,
-    Authorization: `Bearer ${env.GPM2_INSTANCE_TOKEN}`,
-  };
+const getHeaders = env => ({
+  Accept: `application/json`,
+  Authorization: `Bearer ${env.GPM2_INSTANCE_TOKEN}`,
+});
 
+async function getRunnerToken(env) {
   const res = await axios.get(
     `${env.GPM2_METADATA_URL}/runner-registration-token`,
-    { headers }
+    { headers: getHeaders(env) }
   );
   return res.data;
+}
+
+async function updateStatus(env, obj) {
+  const res = await axios.post(env.GPM2_CALLBACK_URL, obj, {
+    headers: getHeaders(env),
+  });
 }
 
 async function createInstance() {
@@ -141,7 +147,7 @@ async function createInstance() {
 
   const stashDir = await workDir("stash");
   const runnerHome = await workDir("job", bootstrap.name);
-  const status = "stopped";
+  const status = "running";
 
   const tool = getMatchingTool(tools);
 
@@ -180,6 +186,8 @@ async function createInstance() {
     autorestart: false,
     env: { ...env },
   });
+
+  await updateStatus(env, { status: "idle", message: "Runner launched" });
 
   await sendOutput(env2Instance(baseEnv));
 }
