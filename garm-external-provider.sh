@@ -2,14 +2,11 @@
 
 set -e
 
-export PATH="/snap/bin:/usr/local/bin:/usr/bin:/bin"
-export HOME="/home/andy"
+[[ -f $GARM_PROVIDER_CONFIG_FILE ]] && source $GARM_PROVIDER_CONFIG_FILE
+
+export PATH
+export HOME
 
 cd $(dirname "$0")
 
-pwd >> "/tmp/provider.log"
-which node >> "/tmp/provider.log"
-env | sort >> "/tmp/provider.log"
-echo "-----" >> "/tmp/provider.log"
-
-node garm-external-provider.js | tee -a "/tmp/provider.log"
+node bin/provider.js | tee -a /tmp/provider.log

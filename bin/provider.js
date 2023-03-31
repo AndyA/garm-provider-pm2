@@ -6,29 +6,8 @@ const _ = require("lodash");
 const Promise = require("bluebird");
 const pm2 = Promise.promisifyAll(require("pm2"));
 const axios = require("axios");
-const { produce } = require("immer");
-const { resolveNaptr } = require("dns");
 
-// const WORK = path.resolve("./work");
-const WORK = "/home/andy/Works/Github/garm-provider-pm2/work";
-const TMP = "/home/andy/Works/Github/garm-provider-pm2/tmp";
-
-const saveJSON = async (name, data) => {
-  await fs.promises.mkdir(path.dirname(name), { recursive: true });
-  const tmp = `${name}.tmp`;
-  await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2));
-  await fs.promises.rename(tmp, name);
-};
-
-const loadJSON = name => fs.promises.readFile(name, "utf-8").then(JSON.parse);
-
-const mutStore = name => async mutator => {
-  const data = await loadJSON(name).catch(e => ({}));
-  const next = produce(data, mutator);
-  if (next !== data) await saveJSON(name, next);
-};
-
-const record = mutStore(path.join(TMP, "log.json"));
+const WORK = path.resolve("./work");
 
 async function workDir(...name) {
   const dir = path.join(WORK, ...name);
@@ -47,12 +26,6 @@ const osMap = {
   darwin: "osx",
   win32: "win",
 };
-
-// const idChars = "0123456789abcdefghijklmnopqrstuvwxyz";
-// const makeIdent = length =>
-//   Array.from({ length })
-//     .map(() => idChars.charAt(Math.random() * idChars.length))
-//     .join("");
 
 const makeEnv = prefix => obj =>
   _(obj)
@@ -77,8 +50,12 @@ const sendOutput = doc =>
   process.stdout.write(JSON.stringify(doc, null, 2) + "\n");
 
 const pm2Status = {
-  online: "running",
-  stopped: "stopped",
+  "online": "running",
+  "stopped": "stopped",
+  "stopping": "stopped",
+  "waiting restart": "running",
+  "launching": "creating",
+  "errored": "error",
 };
 
 const env2Instance = env => ({
@@ -125,11 +102,9 @@ async function getRunnerToken(env) {
 async function createInstance() {
   const { tools, ...bootstrap } = readInput();
 
-  await saveJSON("tmp/job.json", { tools, ...bootstrap });
-
   const stashDir = await workDir("stash");
   const runnerHome = await workDir("job", bootstrap.name);
-  const status = "running"; // TODO
+  const status = "stopped";
 
   const tool = getMatchingTool(tools);
 
@@ -141,13 +116,10 @@ async function createInstance() {
   };
 
   // Download the action runner and create runnerHome
-  await runCommand("./bin/download.sh", [], env);
+  const rc = await runCommand("./bin/download.sh", [], env);
+  if (rc !== 0) throw new Error(`Downloader failed: ${rc}`);
 
   const githubToken = await getRunnerToken(env);
-  await record(log => {
-    if (!log.tokens) log.tokens = [];
-    log.tokens.push(githubToken);
-  });
 
   await pm2.startAsync({
     name: bootstrap.name,
@@ -161,9 +133,15 @@ async function createInstance() {
   sendOutput(env2Instance(env));
 }
 
+async function runnerCleanup(id) {
+  const dir = await workDir("job", id);
+  await fs.promises.rmdir(dir, { recursive: true, force: true });
+}
+
 async function killInstance(id) {
   await pm2.stopAsync(id);
   await pm2.deleteAsync(id);
+  await runnerCleanup(id);
 }
 
 async function deleteInstance() {
@@ -215,11 +193,6 @@ async function init() {
 async function main() {
   await init();
 
-  await record(log => {
-    if (!log.invoke) log.invoke = [];
-    log.invoke.push(process.env);
-  });
-
   switch (process.env.GARM_COMMAND) {
     // CreateInstance creates a new compute instance in the provider.
     case "CreateInstance":
@@ -239,7 +212,7 @@ async function main() {
 
     // RemoveAllInstances will remove all instances created by this provider.
     case "RemoveAllInstances":
-      break;
+      return removeAllInstances();
 
     // Stop shuts down the instance.
     case "Stop":

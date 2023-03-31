@@ -43,6 +43,9 @@ sendStatus "Configuring runner"
 
 sendStatus "Starting service"
 
-success "Runner successfully started"
+AGENT_ID=$( jq '.agentId' < .runner )
+[[ $? -eq 0 ]] || fail "failed to get agent ID"
+
+success "Runner successfully started" $AGENT_ID
 
 ./run.sh || fail "Failed to start service"

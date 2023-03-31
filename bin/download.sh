@@ -17,12 +17,6 @@ function sendStatus() {
 	call "{\"status\": \"installing\", \"message\": \"$MSG\"}"
 }
 
-function success() {
-	local MSG="$1"
-	local ID="$2"
-	call "{\"status\": \"idle\", \"message\": \"$MSG\", \"agent_id\": $ID}"
-}
-
 function fail() {
   echo "$MSG" 
 	local MSG="$1"
