@@ -189,7 +189,7 @@ async function createInstance() {
 
   await updateStatus(env, { status: "idle", message: "Runner launched" });
 
-  await sendOutput(env2Instance(baseEnv));
+  await sendOutput(env2Instance(env));
 }
 
 async function runnerCleanup(id) {
